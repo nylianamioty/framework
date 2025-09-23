@@ -1,0 +1,3 @@
+com\monframework\web\annotation\RestController.class
+com\monframework\web\annotation\GetMapping.class
+com\monframework\web\DispatcherServlet.class

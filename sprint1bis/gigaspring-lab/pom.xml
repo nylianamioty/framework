@@ -1,0 +1,53 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.giga.spring</groupId>
+  <artifactId>gigaspring-lab</artifactId>
+  <packaging>war</packaging>
+  <version>1.0-SNAPSHOT</version>
+  <name>gigaspring-lab Maven Webapp</name>
+  <url>http://maven.apache.org</url>
+
+  <properties>
+
+    <junit.version>4.13.2</junit.version>
+    <servlet.version>6.0.0</servlet.version>
+    <gigaspring.version>1.0-SNAPSHOT</gigaspring.version>
+
+    <maven.war.plugin.version>3.3.2</maven.war.plugin.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.giga.spring</groupId>
+      <artifactId>gigaspring</artifactId>
+      <version>${gigaspring.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>jakarta.servlet</groupId>
+      <artifactId>jakarta.servlet-api</artifactId>
+      <version>${servlet.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+  <build>
+    <finalName>gigaspring-lab</finalName>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-war-plugin</artifactId>
+        <version>${maven.war.plugin.version}</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

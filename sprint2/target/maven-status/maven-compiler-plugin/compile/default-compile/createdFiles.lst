@@ -1,0 +1,4 @@
+com\monframework\annotation\MyAnnotation.class
+com\monframework\scanner\AnnotationScanner.class
+com\monframework\DemoApplication.class
+com\monframework\MyClass.class

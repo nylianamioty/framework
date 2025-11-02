@@ -1,4 +1,5 @@
 com\monframework\annotation\MyAnnotation.class
+com\monframework\annotation\MyClassAnnotation.class
 com\monframework\scanner\AnnotationScanner.class
 com\monframework\DemoApplication.class
 com\monframework\MyClass.class

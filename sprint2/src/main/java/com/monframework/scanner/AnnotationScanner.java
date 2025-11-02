@@ -1,7 +1,13 @@
 package com.monframework.scanner;
 
 import com.monframework.annotation.MyAnnotation;
+import com.monframework.annotation.MyClassAnnotation;
 import org.reflections.Reflections;
+import org.reflections.scanners.MethodAnnotationsScanner;
+import org.reflections.scanners.SubTypesScanner;
+import org.reflections.scanners.TypeAnnotationsScanner;
+import org.reflections.util.ClasspathHelper;
+import org.reflections.util.ConfigurationBuilder;
 
 import java.lang.reflect.Method;
 import java.util.Set;
@@ -9,16 +15,65 @@ import java.util.Set;
 public class AnnotationScanner {
 
     public static void main(String[] args) {
-        // Crée un objet Reflections pour scanner le package com.monframework
-        Reflections reflections = new Reflections("com.monframework");
+        System.out.println("=== DÉMARRAGE DU SCANNING ===");
+        scanMethods();
+        scanClasses();
+        System.out.println("=== FIN ===");
+    }
 
-        // Recherche toutes les méthodes annotées avec MyAnnotation
-        Set<Method> annotatedMethods = reflections.getMethodsAnnotatedWith(MyAnnotation.class);
+    public static void scanMethods() {
+        try {
+            // Configure Reflections with proper scanners
+            Reflections reflections = new Reflections(new ConfigurationBuilder()
+                .setUrls(ClasspathHelper.forPackage("com.monframework"))
+                .setScanners(new MethodAnnotationsScanner(), 
+                           new SubTypesScanner(false)));
+            
+            Set<Method> annotatedMethods = reflections.getMethodsAnnotatedWith(MyAnnotation.class);
 
-        // Affiche les méthodes trouvées
-        for (Method method : annotatedMethods) {
-            MyAnnotation annotation = method.getAnnotation(MyAnnotation.class);
-            System.out.println("Méthode : " + method.getName() + " - Description : " + annotation.description());
+            System.out.println("\n=== Méthodes annotées ===");
+            
+            if (annotatedMethods.isEmpty()) {
+                System.out.println("Aucune méthode annotée trouvée !");
+            } else {
+                for (Method method : annotatedMethods) {
+                    MyAnnotation annotation = method.getAnnotation(MyAnnotation.class);
+                    System.out.println("Méthode : " + method.getDeclaringClass().getSimpleName() + 
+                                     "." + method.getName() + 
+                                     " - Description : " + annotation.description());
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Erreur lors du scanning des méthodes: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void scanClasses() {
+        try {
+            Reflections reflections = new Reflections(new ConfigurationBuilder()
+                .setUrls(ClasspathHelper.forPackage("com.monframework"))
+                .setScanners(new TypeAnnotationsScanner(), 
+                           new SubTypesScanner(false)));
+            
+            Set<Class<?>> annotatedClasses = reflections.getTypesAnnotatedWith(MyClassAnnotation.class);
+
+            System.out.println("\n=== Classes annotées ===");
+            
+            if (annotatedClasses.isEmpty()) {
+                System.out.println("Aucune classe annotée trouvée !");
+            } else {
+                for (Class<?> clazz : annotatedClasses) {
+                    MyClassAnnotation annotation = clazz.getAnnotation(MyClassAnnotation.class);
+                    System.out.println("Classe : " + clazz.getSimpleName() + 
+                                     " - Description : " + annotation.value() +
+                                     " - Auteur : " + annotation.author() +
+                                     " - Version : " + annotation.version());
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Erreur lors du scanning des classes: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 }

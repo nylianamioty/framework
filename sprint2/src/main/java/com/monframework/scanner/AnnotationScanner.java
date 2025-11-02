@@ -13,6 +13,13 @@ import java.lang.reflect.Method;
 import java.util.Set;
 
 public class AnnotationScanner {
+    private static final Reflections reflections = new Reflections(new ConfigurationBuilder()
+            .setUrls(ClasspathHelper.forPackage("com.monframework"))
+            .setScanners(
+                new MethodAnnotationsScanner(),
+                new TypeAnnotationsScanner(),
+                new SubTypesScanner(false)
+            ));
 
     public static void main(String[] args) {
         System.out.println("=== DÉMARRAGE DU SCANNING ===");
@@ -23,12 +30,6 @@ public class AnnotationScanner {
 
     public static void scanMethods() {
         try {
-            // Configure Reflections with proper scanners
-            Reflections reflections = new Reflections(new ConfigurationBuilder()
-                .setUrls(ClasspathHelper.forPackage("com.monframework"))
-                .setScanners(new MethodAnnotationsScanner(), 
-                           new SubTypesScanner(false)));
-            
             Set<Method> annotatedMethods = reflections.getMethodsAnnotatedWith(MyAnnotation.class);
 
             System.out.println("\n=== Méthodes annotées ===");
@@ -51,11 +52,6 @@ public class AnnotationScanner {
 
     public static void scanClasses() {
         try {
-            Reflections reflections = new Reflections(new ConfigurationBuilder()
-                .setUrls(ClasspathHelper.forPackage("com.monframework"))
-                .setScanners(new TypeAnnotationsScanner(), 
-                           new SubTypesScanner(false)));
-            
             Set<Class<?>> annotatedClasses = reflections.getTypesAnnotatedWith(MyClassAnnotation.class);
 
             System.out.println("\n=== Classes annotées ===");

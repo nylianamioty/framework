@@ -1,3 +1,15 @@
 com\monframework\web\annotation\RestController.class
 com\monframework\web\annotation\GetMapping.class
+com\monframework\mapping\RouteRegistry.class
+com\monframework\mapping\URLRoute.class
+com\monframework\MyClass.class
+com\monframework\annotation\MyAnnotation.class
+com\monframework\mapping\ControllerScanner.class
+com\monframework\annotation\MyClassAnnotation.class
+com\monframework\scanner\AnnotationScanner.class
+com\monframework\annotation\URLMapping.class
+com\monframework\App.class
+com\monframework\controller\Controller.class
+com\monframework\annotation\Controller.class
+com\monframework\FrontServlet.class
 com\monframework\web\DispatcherServlet.class

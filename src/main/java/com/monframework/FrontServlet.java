@@ -71,33 +71,48 @@ public class FrontServlet extends HttpServlet {
     /**
      * Invoque la méthode du contrôleur correspondant à la route.
      */
-    private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
-            throws IOException {
-        try {
-            Map<String, String> urlParams = route.extractParams(path);
-            urlParams.forEach(req::setAttribute);
+   private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
+        throws IOException {
+    try {
+        System.out.println("=== DEBUG FrontServlet ===");
+        System.out.println("URL demandée: " + path);
+        System.out.println("Route trouvée: " + route.getUrlPattern());
+        System.out.println("Contrôleur: " + route.getController().getClass().getName());
+        System.out.println("Méthode: " + route.getMethod().getName());
+        
+        Map<String, String> urlParams = route.extractParams(path);
+        urlParams.forEach(req::setAttribute);
 
-            Method method = route.getMethod();
-            Object controller = route.getController();
+        Method method = route.getMethod();
+        Object controller = route.getController();
 
-            // La méthode doit accepter (HttpServletRequest, HttpServletResponse)
-            method.invoke(controller, req, res);
-
-        } catch (Exception e) {
-            System.err.println("Erreur lors de l'invocation du contrôleur: " + e.getMessage());
-            e.printStackTrace();
-
-            res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        // Invoke la méthode du contrôleur
+        Object result = method.invoke(controller, req, res);
+        
+        // Traiter le retour si c'est une String
+        if (result instanceof String) {
+            String responseString = (String) result;
             res.setContentType("text/html;charset=UTF-8");
             try (PrintWriter out = res.getWriter()) {
-                out.println("<html><head><title>Erreur Serveur</title></head><body>");
-                out.println("<h1>Erreur 500 - Erreur Interne du Serveur</h1>");
-                out.println("<p>Une erreur s'est produite lors du traitement de la requête.</p>");
-                out.println("<pre>" + e.getMessage() + "</pre>");
-                out.println("</body></html>");
+                out.print(responseString);
             }
         }
+
+    } catch (Exception e) {
+        System.err.println("Erreur lors de l'invocation du contrôleur: " + e.getMessage());
+        e.printStackTrace();
+
+        res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        res.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = res.getWriter()) {
+            out.println("<html><head><title>Erreur Serveur</title></head><body>");
+            out.println("<h1>Erreur 500 - Erreur Interne du Serveur</h1>");
+            out.println("<p>Une erreur s'est produite lors du traitement de la requête.</p>");
+            out.println("<pre>" + e.getMessage() + "</pre>");
+            out.println("</body></html>");
+        }
     }
+}
 
     /**
      * Affiche une page d'erreur 404 personnalisée.

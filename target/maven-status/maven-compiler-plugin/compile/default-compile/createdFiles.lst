@@ -1,5 +1,6 @@
 com\monframework\web\annotation\RestController.class
 com\monframework\web\annotation\GetMapping.class
+com\monframework\mvc\ModelView.class
 com\monframework\mapping\RouteRegistry.class
 com\monframework\mapping\URLRoute.class
 com\monframework\MyClass.class

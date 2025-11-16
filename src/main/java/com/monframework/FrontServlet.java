@@ -3,6 +3,8 @@ package com.monframework;
 import com.monframework.mapping.ControllerScanner;
 import com.monframework.mapping.RouteRegistry;
 import com.monframework.mapping.URLRoute;
+import com.monframework.mvc.ModelView;
+
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
@@ -71,8 +73,8 @@ public class FrontServlet extends HttpServlet {
     /**
      * Invoque la méthode du contrôleur correspondant à la route.
      */
-   private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
-        throws IOException {
+ private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
+        throws IOException, ServletException {
     try {
         System.out.println("=== DEBUG FrontServlet ===");
         System.out.println("URL demandée: " + path);
@@ -81,21 +83,65 @@ public class FrontServlet extends HttpServlet {
         System.out.println("Méthode: " + route.getMethod().getName());
         
         Map<String, String> urlParams = route.extractParams(path);
-        urlParams.forEach(req::setAttribute);
-
         Method method = route.getMethod();
         Object controller = route.getController();
+        Object result;
 
-        // Invoke la méthode du contrôleur
-        Object result = method.invoke(controller, req, res);
+        // Vérifier les paramètres de la méthode
+        Class<?>[] paramTypes = method.getParameterTypes();
         
-        // Traiter le retour si c'est une String
+        if (paramTypes.length == 0) {
+            // Méthode sans paramètres
+            result = method.invoke(controller);
+        } else if (paramTypes.length == 1 && paramTypes[0] == String.class) {
+            // Méthode avec 1 paramètre String (ex: /users/{id})
+            String paramValue = urlParams.values().iterator().next();
+            result = method.invoke(controller, paramValue);
+        } else if (paramTypes.length == 2 && 
+                   paramTypes[0] == HttpServletRequest.class && 
+                   paramTypes[1] == HttpServletResponse.class) {
+            // Méthode avec (req, res)
+            urlParams.forEach(req::setAttribute);
+            result = method.invoke(controller, req, res);
+        } else {
+            throw new RuntimeException("Signature de méthode non supportée: " + method.getName());
+        }
+        
+        // Traiter le retour selon le type
         if (result instanceof String) {
+            // Cas 1: Retour String -> PrintWriter direct
             String responseString = (String) result;
             res.setContentType("text/html;charset=UTF-8");
             try (PrintWriter out = res.getWriter()) {
                 out.print(responseString);
             }
+            System.out.println("Retour String traité: " + responseString);
+            
+        } else if (result instanceof ModelView) {
+            // Cas 2: Retour ModelView -> Forward vers JSP
+            ModelView mv = (ModelView) result;
+            String viewName = mv.getView();
+            
+            // Ajouter les données au request
+            Map<String, Object> data = mv.getData();
+            for (Map.Entry<String, Object> entry : data.entrySet()) {
+                req.setAttribute(entry.getKey(), entry.getValue());
+            }
+            
+            // Ajouter aussi les paramètres d'URL
+            urlParams.forEach(req::setAttribute);
+            
+            // Forward vers la JSP
+            RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
+            dispatcher.forward(req, res);
+            System.out.println("Forward vers JSP: " + viewName);
+            
+        } else if (result != null) {
+            // Autre type d'objet
+            System.out.println("Type de retour non géré: " + result.getClass().getName());
+        } else {
+            // Retour void ou null
+            System.out.println("Aucun retour de la méthode");
         }
 
     } catch (Exception e) {

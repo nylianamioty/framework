@@ -49,7 +49,7 @@ public class URLRoute {
      * Extrait les paramètres de l'URL
      * Exemple: pattern="/users/{id}", url="/users/123" -> {"id": "123"}
      */
-    public Map<String, String> extractParams(String url) {
+   public Map<String, String> extractParams(String url) {
         Map<String, String> params = new HashMap<>();
         Matcher matcher = regex.matcher(url);
         

@@ -70,55 +70,108 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
-    /**
-     * Invoque la méthode du contrôleur correspondant à la route.
-     */
+   
 private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
         throws IOException, ServletException {
     try {
+        System.out.println("=== DEBUG FrontServlet ===");
+        System.out.println("URL demandée: " + path);
+        System.out.println("Route trouvée: " + route.getUrlPattern());
+        System.out.println("Contrôleur: " + route.getController().getClass().getName());
+        System.out.println("Méthode: " + route.getMethod().getName());
+        
         Map<String, String> urlParams = route.extractParams(path);
+        System.out.println("Paramètres URL extraits: " + urlParams);
+        
         Method method = route.getMethod();
         Object controller = route.getController();
         Object result;
 
         Class<?>[] paramTypes = method.getParameterTypes();
+        System.out.println("Paramètres méthode: " + paramTypes.length);
         
         if (paramTypes.length == 0) {
+            System.out.println("Appel sans paramètres");
             result = method.invoke(controller);
-        } else if (paramTypes.length == 1 && paramTypes[0] == String.class) {
+            
+        } else if (paramTypes.length == 1 && paramTypes[0] == String.class && urlParams.size() == 1) {
             String paramValue = urlParams.values().iterator().next();
+            System.out.println("Appel avec 1 paramètre String: " + paramValue);
             result = method.invoke(controller, paramValue);
+            
+        } else if (paramTypes.length == urlParams.size()) {
+            System.out.println("Appel avec " + paramTypes.length + " paramètres");
+            Object[] args = new Object[paramTypes.length];
+            String[] paramNames = urlParams.keySet().toArray(new String[0]);
+            
+            for (int i = 0; i < paramTypes.length; i++) {
+                if (paramTypes[i] == String.class) {
+                    args[i] = urlParams.get(paramNames[i]);
+                    System.out.println("Paramètre " + i + " (" + paramNames[i] + "): " + args[i]);
+                } else {
+                    throw new RuntimeException("Type de paramètre non supporté: " + paramTypes[i]);
+                }
+            }
+            result = method.invoke(controller, args);
+            
         } else if (paramTypes.length == 2 && 
                    paramTypes[0] == HttpServletRequest.class && 
                    paramTypes[1] == HttpServletResponse.class) {
+            System.out.println("Appel avec (req, res)");
             urlParams.forEach(req::setAttribute);
             result = method.invoke(controller, req, res);
+            
         } else {
-            throw new RuntimeException("Signature non supportée: " + method.getName());
+            String errorMsg = "Signature non supportée: " + method.getName() + 
+                            " - Paramètres attendus: " + paramTypes.length + 
+                            " - Paramètres URL: " + urlParams.size();
+            System.err.println(errorMsg);
+            throw new RuntimeException(errorMsg);
         }
 
         if (result instanceof String) {
+            // Cas 1: Retour String -> PrintWriter direct
             String responseString = (String) result;
+            System.out.println("Retour String: " + responseString);
             res.setContentType("text/html;charset=UTF-8");
             try (PrintWriter out = res.getWriter()) {
                 out.print(responseString);
             }
             
         } else if (result instanceof ModelView) {
+            // Cas 2: Retour ModelView -> Forward vers JSP
             ModelView mv = (ModelView) result;
             String viewName = mv.getView();
+            System.out.println("Retour ModelView -> JSP: " + viewName);
             
+            // Transférer les données au request
             Map<String, Object> data = mv.getData();
             for (Map.Entry<String, Object> entry : data.entrySet()) {
                 req.setAttribute(entry.getKey(), entry.getValue());
+                System.out.println("Donnée JSP: " + entry.getKey() + " = " + entry.getValue());
             }
             
-            RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
-            dispatcher.forward(req, res);
+            // Ajouter aussi les paramètres d'URL
+            urlParams.forEach(req::setAttribute);
             
+            // Forward vers la JSP
+            RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
+            if (dispatcher != null) {
+                dispatcher.forward(req, res);
+                System.out.println("Forward réussi vers: " + viewName);
+            } else {
+                throw new ServletException("JSP non trouvée: " + viewName);
+            }
+            
+        } else if (result == null) {
+            // Retour void
+            System.out.println("Méthode sans retour (void)");
+        } else {
+            System.out.println("Type de retour non géré: " + result.getClass().getName());
         }
+
     } catch (Exception e) {
-        System.err.println("Erreur lors de l'invocation du contrôleur: " + e.getMessage());
+        System.err.println("ERREUR lors de l'invocation du contrôleur: " + e.getMessage());
         e.printStackTrace();
 
         res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
@@ -127,12 +180,12 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
             out.println("<html><head><title>Erreur Serveur</title></head><body>");
             out.println("<h1>Erreur 500 - Erreur Interne du Serveur</h1>");
             out.println("<p>Une erreur s'est produite lors du traitement de la requête.</p>");
-            out.println("<pre>" + e.getMessage() + "</pre>");
+            out.println("<pre>URL: " + path + "</pre>");
+            out.println("<pre>Erreur: " + e.getMessage() + "</pre>");
             out.println("</body></html>");
         }
     }
 }
-
     /**
      * Affiche une page d'erreur 404 personnalisée.
      */

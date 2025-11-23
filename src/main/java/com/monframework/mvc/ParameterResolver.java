@@ -20,14 +20,30 @@ public class ParameterResolver {
         System.err.println("URL Params: " + urlParams);
         System.err.println("Query Params: " + request.getParameterMap().keySet());
         
+        // Combiner toutes les valeurs disponibles dans l'ordre
+        List<String> allValues = new ArrayList<>();
+        
+        // 1. D'abord les valeurs d'URL
+        allValues.addAll(urlParams.values());
+        
+        // 2. Ensuite les valeurs de requête  
+        Map<String, String[]> queryParams = request.getParameterMap();
+        for (String[] values : queryParams.values()) {
+            if (values != null && values.length > 0) {
+                allValues.add(values[0]);
+            }
+        }
+        
+        System.err.println("Toutes les valeurs (ordre): " + allValues);
+        
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
             Class<?> paramType = param.getType();
             RequestParam requestParam = param.getAnnotation(RequestParam.class);
             
-            System.err.println("Paramètre " + i + ": " + paramType.getSimpleName() + 
-                             (requestParam != null ? " @RequestParam(\"" + requestParam.value() + "\")" : ""));
+            System.err.println("Paramètre " + i + ": " + paramType.getSimpleName());
             
+            // Types spéciaux
             if (paramType == HttpServletRequest.class) {
                 args[i] = request;
                 System.err.println("  → HttpServletRequest");
@@ -39,43 +55,34 @@ public class ParameterResolver {
                 continue;
             }
             
+            // Avec @RequestParam - chercher par nom exact
             if (requestParam != null) {
                 String paramName = requestParam.value();
                 String paramValue = null;
                 
                 if (urlParams.containsKey(paramName)) {
                     paramValue = urlParams.get(paramName);
-                    System.err.println("  → Trouvé dans URL: " + paramValue);
+                    System.err.println("  → @RequestParam trouvé dans URL: " + paramValue);
                 }
                 else if (request.getParameter(paramName) != null) {
                     paramValue = request.getParameter(paramName);
-                    System.err.println("  → Trouvé dans Query: " + paramValue);
+                    System.err.println("  → @RequestParam trouvé dans Query: " + paramValue);
                 }
                 else if (requestParam.required()) {
                     throw new RuntimeException("Paramètre requis manquant: " + paramName);
                 }
                 else if (!requestParam.defaultValue().isEmpty()) {
                     paramValue = requestParam.defaultValue();
-                    System.err.println("  → Valeur par défaut: " + paramValue);
+                    System.err.println("  → @RequestParam valeur par défaut: " + paramValue);
                 }
                 
                 args[i] = convertValue(paramValue, paramType);
-                System.err.println("  → Résultat: " + args[i]);
             }
+            // Sans annotation - injection par ORDRE
             else {
-                List<String> allValues = new ArrayList<>();
-                allValues.addAll(urlParams.values());
-                
-                Map<String, String[]> queryParams = request.getParameterMap();
-                for (String[] values : queryParams.values()) {
-                    if (values != null && values.length > 0) {
-                        allValues.add(values[0]);
-                    }
-                }
-                
                 if (i < allValues.size() && allValues.get(i) != null) {
                     args[i] = convertValue(allValues.get(i), paramType);
-                    System.err.println("  → Valeur par ordre: " + allValues.get(i) + " → " + args[i]);
+                    System.err.println("  → Injection par ordre: " + allValues.get(i) + " → " + args[i]);
                 } else {
                     args[i] = getDefaultValue(paramType);
                     System.err.println("  → Valeur par défaut: " + args[i]);

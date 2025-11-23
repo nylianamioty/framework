@@ -4,6 +4,7 @@ import com.monframework.mapping.ControllerScanner;
 import com.monframework.mapping.RouteRegistry;
 import com.monframework.mapping.URLRoute;
 import com.monframework.mvc.ModelView;
+import com.monframework.mvc.ParameterResolver;
 
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletConfig;
@@ -17,11 +18,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 
-/**
- * FrontServlet : point d'entrée de toutes les requêtes HTTP.
- * - Sert les ressources statiques via le dispatcher par défaut.
- * - Route les URLs dynamiques vers les contrôleurs.
- */
+
 public class FrontServlet extends HttpServlet {
 
     private RequestDispatcher defaultDispatcher;
@@ -33,7 +30,6 @@ public class FrontServlet extends HttpServlet {
         defaultDispatcher = getServletContext().getNamedDispatcher("default");
         routeRegistry = new RouteRegistry();
 
-        // Récupère le package des contrôleurs depuis le paramètre d'init
         String basePackage = config.getInitParameter("controller-package");
         if (basePackage == null || basePackage.isEmpty()) {
             basePackage = "com.giga.springlab.controller";
@@ -42,11 +38,9 @@ public class FrontServlet extends HttpServlet {
         System.out.println("=== Initialisation du FrontServlet ===");
         System.out.println("Scan du package: " + basePackage);
 
-        // Scan et enregistre les routes des contrôleurs
         List<URLRoute> routes = ControllerScanner.scanPackage(basePackage);
         routeRegistry.registerRoutes(routes);
 
-        // Affiche les routes enregistrées
         routeRegistry.printRoutes();
         System.out.println("=== FrontServlet initialisé ===");
     }
@@ -57,10 +51,8 @@ public class FrontServlet extends HttpServlet {
         boolean resourceExists = getServletContext().getResource(path) != null;
 
         if (resourceExists) {
-            // Sert les fichiers statiques (JSP, HTML, etc.)
             defaultServe(req, res);
         } else {
-            // Route dynamique
             URLRoute route = routeRegistry.findRoute(path);
             if (route != null) {
                 invokeController(route, path, req, res);
@@ -70,10 +62,8 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
-    /**
-     * Invoque la méthode du contrôleur correspondant à la route.
-     */
- private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
+   
+private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
         throws IOException, ServletException {
     try {
         System.out.println("=== DEBUG FrontServlet ===");
@@ -83,69 +73,71 @@ public class FrontServlet extends HttpServlet {
         System.out.println("Méthode: " + route.getMethod().getName());
         
         Map<String, String> urlParams = route.extractParams(path);
+        System.out.println("Paramètres URL extraits: " + urlParams);
+        System.out.println("Paramètres Query: " + req.getParameterMap());
+        
         Method method = route.getMethod();
         Object controller = route.getController();
         Object result;
 
-        // Vérifier les paramètres de la méthode
-        Class<?>[] paramTypes = method.getParameterTypes();
+        Object[] args = ParameterResolver.resolveParameters(method, req, urlParams);
         
-        if (paramTypes.length == 0) {
-            // Méthode sans paramètres
-            result = method.invoke(controller);
-        } else if (paramTypes.length == 1 && paramTypes[0] == String.class) {
-            // Méthode avec 1 paramètre String (ex: /users/{id})
-            String paramValue = urlParams.values().iterator().next();
-            result = method.invoke(controller, paramValue);
-        } else if (paramTypes.length == 2 && 
-                   paramTypes[0] == HttpServletRequest.class && 
-                   paramTypes[1] == HttpServletResponse.class) {
-            // Méthode avec (req, res)
-            urlParams.forEach(req::setAttribute);
-            result = method.invoke(controller, req, res);
-        } else {
-            throw new RuntimeException("Signature de méthode non supportée: " + method.getName());
+        // Injecter HttpServletResponse si nécessaire
+        Class<?>[] paramTypes = method.getParameterTypes();
+        for (int i = 0; i < paramTypes.length; i++) {
+            if (paramTypes[i] == HttpServletResponse.class && args[i] == null) {
+                args[i] = res;
+            }
         }
         
-        // Traiter le retour selon le type
-        if (result instanceof String) {
-            // Cas 1: Retour String -> PrintWriter direct
+        System.out.println("Paramètres résolus: " + java.util.Arrays.toString(args));
+        // === FIN NOUVELLE PARTIE ===
+        
+        // Appel de la méthode avec les paramètres résolus
+        result = method.invoke(controller, args);
+
+        // Traiter le retour selon le type (SEULEMENT si pas déjà géré dans la méthode)
+        boolean methodHandledResponse = false;
+        for (Object arg : args) {
+            if (arg == res) {
+                methodHandledResponse = true;
+                break;
+            }
+        }
+        
+        if (!methodHandledResponse && result instanceof String) {
+            // Retour String -> PrintWriter direct
             String responseString = (String) result;
+            System.out.println("Retour String: " + responseString);
             res.setContentType("text/html;charset=UTF-8");
             try (PrintWriter out = res.getWriter()) {
                 out.print(responseString);
             }
-            System.out.println("Retour String traité: " + responseString);
             
-        } else if (result instanceof ModelView) {
-            // Cas 2: Retour ModelView -> Forward vers JSP
+        } else if (!methodHandledResponse && result instanceof ModelView) {
             ModelView mv = (ModelView) result;
             String viewName = mv.getView();
+            System.out.println("Retour ModelView -> JSP: " + viewName);
             
-            // Ajouter les données au request
             Map<String, Object> data = mv.getData();
             for (Map.Entry<String, Object> entry : data.entrySet()) {
                 req.setAttribute(entry.getKey(), entry.getValue());
+                System.out.println("Donnée JSP: " + entry.getKey() + " = " + entry.getValue());
             }
             
-            // Ajouter aussi les paramètres d'URL
             urlParams.forEach(req::setAttribute);
             
-            // Forward vers la JSP
             RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
-            dispatcher.forward(req, res);
-            System.out.println("Forward vers JSP: " + viewName);
-            
-        } else if (result != null) {
-            // Autre type d'objet
-            System.out.println("Type de retour non géré: " + result.getClass().getName());
-        } else {
-            // Retour void ou null
-            System.out.println("Aucun retour de la méthode");
+            if (dispatcher != null) {
+                dispatcher.forward(req, res);
+                System.out.println("Forward réussi vers: " + viewName);
+            } else {
+                throw new ServletException("JSP non trouvée: " + viewName);
+            }
         }
 
     } catch (Exception e) {
-        System.err.println("Erreur lors de l'invocation du contrôleur: " + e.getMessage());
+        System.err.println("ERREUR lors de l'invocation du contrôleur: " + e.getMessage());
         e.printStackTrace();
 
         res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
@@ -154,15 +146,13 @@ public class FrontServlet extends HttpServlet {
             out.println("<html><head><title>Erreur Serveur</title></head><body>");
             out.println("<h1>Erreur 500 - Erreur Interne du Serveur</h1>");
             out.println("<p>Une erreur s'est produite lors du traitement de la requête.</p>");
-            out.println("<pre>" + e.getMessage() + "</pre>");
+            out.println("<pre>URL: " + path + "</pre>");
+            out.println("<pre>Erreur: " + e.getMessage() + "</pre>");
             out.println("</body></html>");
         }
     }
 }
-
-    /**
-     * Affiche une page d'erreur 404 personnalisée.
-     */
+     
     private void customServe(HttpServletRequest req, HttpServletResponse res) throws IOException {
         String uri = req.getRequestURI();
         String responseBody =
@@ -189,9 +179,7 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
-    /**
-     * Sert les fichiers statiques via le dispatcher par défaut.
-     */
+   
     private void defaultServe(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
         defaultDispatcher.forward(req, res);
     }

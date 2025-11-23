@@ -4,6 +4,7 @@ import com.monframework.mapping.ControllerScanner;
 import com.monframework.mapping.RouteRegistry;
 import com.monframework.mapping.URLRoute;
 import com.monframework.mvc.ModelView;
+import com.monframework.mvc.ParameterResolver;
 
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletConfig;
@@ -17,11 +18,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 
-/**
- * FrontServlet : point d'entrée de toutes les requêtes HTTP.
- * - Sert les ressources statiques via le dispatcher par défaut.
- * - Route les URLs dynamiques vers les contrôleurs.
- */
+
 public class FrontServlet extends HttpServlet {
 
     private RequestDispatcher defaultDispatcher;
@@ -33,7 +30,6 @@ public class FrontServlet extends HttpServlet {
         defaultDispatcher = getServletContext().getNamedDispatcher("default");
         routeRegistry = new RouteRegistry();
 
-        // Récupère le package des contrôleurs depuis le paramètre d'init
         String basePackage = config.getInitParameter("controller-package");
         if (basePackage == null || basePackage.isEmpty()) {
             basePackage = "com.giga.springlab.controller";
@@ -42,11 +38,9 @@ public class FrontServlet extends HttpServlet {
         System.out.println("=== Initialisation du FrontServlet ===");
         System.out.println("Scan du package: " + basePackage);
 
-        // Scan et enregistre les routes des contrôleurs
         List<URLRoute> routes = ControllerScanner.scanPackage(basePackage);
         routeRegistry.registerRoutes(routes);
 
-        // Affiche les routes enregistrées
         routeRegistry.printRoutes();
         System.out.println("=== FrontServlet initialisé ===");
     }
@@ -57,10 +51,8 @@ public class FrontServlet extends HttpServlet {
         boolean resourceExists = getServletContext().getResource(path) != null;
 
         if (resourceExists) {
-            // Sert les fichiers statiques (JSP, HTML, etc.)
             defaultServe(req, res);
         } else {
-            // Route dynamique
             URLRoute route = routeRegistry.findRoute(path);
             if (route != null) {
                 invokeController(route, path, req, res);
@@ -82,55 +74,39 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
         
         Map<String, String> urlParams = route.extractParams(path);
         System.out.println("Paramètres URL extraits: " + urlParams);
+        System.out.println("Paramètres Query: " + req.getParameterMap());
         
         Method method = route.getMethod();
         Object controller = route.getController();
         Object result;
 
-        Class<?>[] paramTypes = method.getParameterTypes();
-        System.out.println("Paramètres méthode: " + paramTypes.length);
+        Object[] args = ParameterResolver.resolveParameters(method, req, urlParams);
         
-        if (paramTypes.length == 0) {
-            System.out.println("Appel sans paramètres");
-            result = method.invoke(controller);
-            
-        } else if (paramTypes.length == 1 && paramTypes[0] == String.class && urlParams.size() == 1) {
-            String paramValue = urlParams.values().iterator().next();
-            System.out.println("Appel avec 1 paramètre String: " + paramValue);
-            result = method.invoke(controller, paramValue);
-            
-        } else if (paramTypes.length == urlParams.size()) {
-            System.out.println("Appel avec " + paramTypes.length + " paramètres");
-            Object[] args = new Object[paramTypes.length];
-            String[] paramNames = urlParams.keySet().toArray(new String[0]);
-            
-            for (int i = 0; i < paramTypes.length; i++) {
-                if (paramTypes[i] == String.class) {
-                    args[i] = urlParams.get(paramNames[i]);
-                    System.out.println("Paramètre " + i + " (" + paramNames[i] + "): " + args[i]);
-                } else {
-                    throw new RuntimeException("Type de paramètre non supporté: " + paramTypes[i]);
-                }
+        // Injecter HttpServletResponse si nécessaire
+        Class<?>[] paramTypes = method.getParameterTypes();
+        for (int i = 0; i < paramTypes.length; i++) {
+            if (paramTypes[i] == HttpServletResponse.class && args[i] == null) {
+                args[i] = res;
             }
-            result = method.invoke(controller, args);
-            
-        } else if (paramTypes.length == 2 && 
-                   paramTypes[0] == HttpServletRequest.class && 
-                   paramTypes[1] == HttpServletResponse.class) {
-            System.out.println("Appel avec (req, res)");
-            urlParams.forEach(req::setAttribute);
-            result = method.invoke(controller, req, res);
-            
-        } else {
-            String errorMsg = "Signature non supportée: " + method.getName() + 
-                            " - Paramètres attendus: " + paramTypes.length + 
-                            " - Paramètres URL: " + urlParams.size();
-            System.err.println(errorMsg);
-            throw new RuntimeException(errorMsg);
         }
+        
+        System.out.println("Paramètres résolus: " + java.util.Arrays.toString(args));
+        // === FIN NOUVELLE PARTIE ===
+        
+        // Appel de la méthode avec les paramètres résolus
+        result = method.invoke(controller, args);
 
-        if (result instanceof String) {
-            // Cas 1: Retour String -> PrintWriter direct
+        // Traiter le retour selon le type (SEULEMENT si pas déjà géré dans la méthode)
+        boolean methodHandledResponse = false;
+        for (Object arg : args) {
+            if (arg == res) {
+                methodHandledResponse = true;
+                break;
+            }
+        }
+        
+        if (!methodHandledResponse && result instanceof String) {
+            // Retour String -> PrintWriter direct
             String responseString = (String) result;
             System.out.println("Retour String: " + responseString);
             res.setContentType("text/html;charset=UTF-8");
@@ -138,23 +114,19 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
                 out.print(responseString);
             }
             
-        } else if (result instanceof ModelView) {
-            // Cas 2: Retour ModelView -> Forward vers JSP
+        } else if (!methodHandledResponse && result instanceof ModelView) {
             ModelView mv = (ModelView) result;
             String viewName = mv.getView();
             System.out.println("Retour ModelView -> JSP: " + viewName);
             
-            // Transférer les données au request
             Map<String, Object> data = mv.getData();
             for (Map.Entry<String, Object> entry : data.entrySet()) {
                 req.setAttribute(entry.getKey(), entry.getValue());
                 System.out.println("Donnée JSP: " + entry.getKey() + " = " + entry.getValue());
             }
             
-            // Ajouter aussi les paramètres d'URL
             urlParams.forEach(req::setAttribute);
             
-            // Forward vers la JSP
             RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
             if (dispatcher != null) {
                 dispatcher.forward(req, res);
@@ -162,12 +134,6 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
             } else {
                 throw new ServletException("JSP non trouvée: " + viewName);
             }
-            
-        } else if (result == null) {
-            // Retour void
-            System.out.println("Méthode sans retour (void)");
-        } else {
-            System.out.println("Type de retour non géré: " + result.getClass().getName());
         }
 
     } catch (Exception e) {
@@ -186,9 +152,7 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
         }
     }
 }
-    /**
-     * Affiche une page d'erreur 404 personnalisée.
-     */
+     
     private void customServe(HttpServletRequest req, HttpServletResponse res) throws IOException {
         String uri = req.getRequestURI();
         String responseBody =
@@ -215,9 +179,7 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
         }
     }
 
-    /**
-     * Sert les fichiers statiques via le dispatcher par défaut.
-     */
+   
     private void defaultServe(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
         defaultDispatcher.forward(req, res);
     }

@@ -6,9 +6,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Représente une route URL avec son contrôleur et sa méthode associée
- */
+
 public class URLRoute {
     private final String urlPattern;
     private final Object controller;
@@ -38,16 +36,14 @@ public class URLRoute {
         this.regex = Pattern.compile("^" + regexPattern + "$");
     }
 
-    /**
-     * Vérifie si l'URL correspond à ce pattern
-     */
+    
     public boolean matches(String url) {
         return regex.matcher(url).matches();
     }
 
     /**
      * Extrait les paramètres de l'URL
-     * Exemple: pattern="/users/{id}", url="/users/123" -> {"id": "123"}
+        ex: pattern="/users/{id}", url="/users/123" -> {"id": "123"}
      */
    public Map<String, String> extractParams(String url) {
         Map<String, String> params = new HashMap<>();

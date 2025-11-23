@@ -144,17 +144,14 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
             String viewName = mv.getView();
             System.out.println("Retour ModelView -> JSP: " + viewName);
             
-            // Transférer les données au request
             Map<String, Object> data = mv.getData();
             for (Map.Entry<String, Object> entry : data.entrySet()) {
                 req.setAttribute(entry.getKey(), entry.getValue());
                 System.out.println("Donnée JSP: " + entry.getKey() + " = " + entry.getValue());
             }
             
-            // Ajouter aussi les paramètres d'URL
             urlParams.forEach(req::setAttribute);
             
-            // Forward vers la JSP
             RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
             if (dispatcher != null) {
                 dispatcher.forward(req, res);

@@ -6,23 +6,21 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Représente une route URL avec son contrôleur et sa méthode associée
- */
 public class URLRoute {
     private final String urlPattern;
     private final Object controller;
     private final Method method;
     private final Pattern regex;
     private final String[] paramNames;
+    private final String httpMethod; // GET, POST, PUT, DELETE
 
-    public URLRoute(String urlPattern, Object controller, Method method) {
+    public URLRoute(String urlPattern, Object controller, Method method, String httpMethod) {
         this.urlPattern = urlPattern;
         this.controller = controller;
         this.method = method;
+        this.httpMethod = httpMethod.toUpperCase();
         
         // Convertir le pattern URL en regex
-        // Exemple: /users/{id} -> /users/([^/]+)
         String regexPattern = urlPattern;
         java.util.List<String> params = new java.util.ArrayList<>();
         
@@ -38,18 +36,16 @@ public class URLRoute {
         this.regex = Pattern.compile("^" + regexPattern + "$");
     }
 
-    /**
-     * Vérifie si l'URL correspond à ce pattern
-     */
+    public boolean matches(String url, String method) {
+        return regex.matcher(url).matches() && 
+               this.httpMethod.equalsIgnoreCase(method);
+    }
+
     public boolean matches(String url) {
         return regex.matcher(url).matches();
     }
 
-    /**
-     * Extrait les paramètres de l'URL
-     * Exemple: pattern="/users/{id}", url="/users/123" -> {"id": "123"}
-     */
-   public Map<String, String> extractParams(String url) {
+    public Map<String, String> extractParams(String url) {
         Map<String, String> params = new HashMap<>();
         Matcher matcher = regex.matcher(url);
         
@@ -74,12 +70,17 @@ public class URLRoute {
         return method;
     }
 
+    public String getHttpMethod() {
+        return httpMethod;
+    }
+
     @Override
     public String toString() {
         return "URLRoute{" +
                 "pattern='" + urlPattern + '\'' +
+                ", method=" + httpMethod +
                 ", controller=" + controller.getClass().getSimpleName() +
-                ", method=" + method.getName() +
+                ", handler=" + method.getName() +
                 '}';
     }
 }

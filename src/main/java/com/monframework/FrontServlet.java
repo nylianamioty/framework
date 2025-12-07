@@ -66,6 +66,14 @@ public class FrontServlet extends HttpServlet {
 private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
         throws IOException, ServletException {
     try {
+         String requestMethod = req.getMethod().toUpperCase();
+        String routeMethod = route.getHttpMethod().toUpperCase();
+        
+        if (!routeMethod.equals("GET") && !routeMethod.equals(requestMethod)) {
+            res.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED, 
+                         "Méthode " + requestMethod + " non autorisée. Méthode attendue: " + routeMethod);
+            return;
+        }
         System.out.println("=== DEBUG FrontServlet ===");
         System.out.println("URL demandée: " + path);
         System.out.println("Route trouvée: " + route.getUrlPattern());
@@ -179,7 +187,16 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
         }
     }
 
-   
+   private boolean isHttpMethodAllowed(URLRoute route, String requestMethod) {
+    String routeMethod = route.getHttpMethod().toUpperCase();
+    
+    if (routeMethod == null || routeMethod.isEmpty() || routeMethod.equals("GET")) {
+        // Accepter GET, POST, etc. pour l'ancien système
+        return true; // Tout est autorisé pour la compatibilité
+    }
+    
+    return routeMethod.equals(requestMethod);
+}
     private void defaultServe(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
         defaultDispatcher.forward(req, res);
     }

@@ -1,7 +1,11 @@
 package com.monframework.mapping;
 
 import com.monframework.annotation.Controller;
-import com.monframework.annotation.URLMapping;
+import com.monframework.annotation.RequestMapping;
+import com.monframework.annotation.GetMapping;
+import com.monframework.annotation.PostMapping;
+import com.monframework.annotation.PutMapping;
+import com.monframework.annotation.DeleteMapping;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.net.URL;
@@ -9,14 +13,8 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 
-/**
- * Scanner pour détecter les contrôleurs et leurs annotations URLMapping
- */
 public class ControllerScanner {
 
-    /**
-     * Scanne un package pour trouver tous les contrôleurs et leurs routes
-     */
     public static List<URLRoute> scanPackage(String packageName) {
         List<URLRoute> routes = new ArrayList<>();
         
@@ -41,9 +39,6 @@ public class ControllerScanner {
         return routes;
     }
 
-    /**
-     * Trouve récursivement tous les contrôleurs dans un répertoire
-     */
     private static List<URLRoute> findControllers(File directory, String packageName) {
         List<URLRoute> routes = new ArrayList<>();
         
@@ -68,47 +63,79 @@ public class ControllerScanner {
         return routes;
     }
 
-    /**
-     * Scanne une classe pour trouver ses méthodes annotées avec @URLMapping
-     */
-    private static List<URLRoute> scanClass(String className) {
-        List<URLRoute> routes = new ArrayList<>();
+   private static List<URLRoute> scanClass(String className) {
+    List<URLRoute> routes = new ArrayList<>();
+    
+    try {
+        Class<?> clazz = Class.forName(className);
         
-        try {
-            Class<?> clazz = Class.forName(className);
-            
-            // Vérifier si la classe est annotée avec @Controller
-            if (!clazz.isAnnotationPresent(Controller.class)) {
-                return routes;
-            }
-            
-            System.out.println("Contrôleur trouvé: " + clazz.getSimpleName() + " (annoté @Controller)");
-            
-            // Créer une instance du contrôleur
-            Object controller = clazz.getDeclaredConstructor().newInstance();
-            
-            // Appeler la méthode init() si c'est une sous-classe de Controller
-            if (controller instanceof com.monframework.controller.Controller) {
-                ((com.monframework.controller.Controller) controller).init();
-            }
-            
-            // Scanner les méthodes
-            for (Method method : clazz.getDeclaredMethods()) {
-                URLMapping annotation = method.getAnnotation(URLMapping.class);
-                if (annotation != null) {
-                    String urlPattern = annotation.value();
-                    URLRoute route = new URLRoute(urlPattern, controller, method);
-                    routes.add(route);
-                    System.out.println("  ├─ Route: " + urlPattern + " -> " + 
-                                     clazz.getSimpleName() + "." + method.getName() + "()");
-                }
-            }
-            
-        } catch (Exception e) {
-            System.err.println("Erreur lors du scan de la classe " + className + ": " + e.getMessage());
+        if (!clazz.isAnnotationPresent(Controller.class)) {
+            return routes;
         }
         
-        return routes;
+        System.out.println("Contrôleur trouvé: " + clazz.getSimpleName());
+        
+        Object controller = clazz.getDeclaredConstructor().newInstance();
+        
+        if (controller instanceof com.monframework.controller.Controller) {
+            ((com.monframework.controller.Controller) controller).init();
+        }
+        
+        // Scanner les méthodes
+        for (Method method : clazz.getDeclaredMethods()) {
+            String urlPattern = null;
+            String httpMethod = "GET"; // Par défaut GET
+            
+            // Vérifier les nouvelles annotations HTTP
+            if (method.isAnnotationPresent(RequestMapping.class)) {
+                RequestMapping annotation = method.getAnnotation(RequestMapping.class);
+                urlPattern = annotation.value();
+                httpMethod = annotation.method();
+                System.out.println("  ├─ @RequestMapping: " + httpMethod + " " + urlPattern);
+            }
+            else if (method.isAnnotationPresent(GetMapping.class)) {
+                GetMapping annotation = method.getAnnotation(GetMapping.class);
+                urlPattern = annotation.value();
+                httpMethod = "GET";
+                System.out.println("  ├─ @GetMapping: " + urlPattern);
+            }
+            else if (method.isAnnotationPresent(PostMapping.class)) {
+                PostMapping annotation = method.getAnnotation(PostMapping.class);
+                urlPattern = annotation.value();
+                httpMethod = "POST";
+                System.out.println("  ├─ @PostMapping: " + urlPattern);
+            }
+            else if (method.isAnnotationPresent(PutMapping.class)) {
+                PutMapping annotation = method.getAnnotation(PutMapping.class);
+                urlPattern = annotation.value();
+                httpMethod = "PUT";
+                System.out.println("  ├─ @PutMapping: " + urlPattern);
+            }
+            else if (method.isAnnotationPresent(DeleteMapping.class)) {
+                DeleteMapping annotation = method.getAnnotation(DeleteMapping.class);
+                urlPattern = annotation.value();
+                httpMethod = "DELETE";
+                System.out.println("  ├─ @DeleteMapping: " + urlPattern);
+            }
+            // Compatibilité avec l'ancienne annotation @URLMapping
+            else if (method.isAnnotationPresent(com.monframework.annotation.URLMapping.class)) {
+                com.monframework.annotation.URLMapping annotation = 
+                    method.getAnnotation(com.monframework.annotation.URLMapping.class);
+                urlPattern = annotation.value();
+                httpMethod = "GET"; // GET par défaut pour l'ancien système
+                System.out.println("  ├─ @URLMapping (ancien): " + urlPattern);
+            }
+            
+            if (urlPattern != null) {
+                URLRoute route = new URLRoute(urlPattern, controller, method, httpMethod);
+                routes.add(route);
+            }
+        }
+        
+    } catch (Exception e) {
+        System.err.println("Erreur lors du scan de la classe " + className + ": " + e.getMessage());
     }
+    
+    return routes;
 }
-
+}

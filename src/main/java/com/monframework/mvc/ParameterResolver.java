@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,21 +21,8 @@ public class ParameterResolver {
         System.err.println("URL Params: " + urlParams);
         System.err.println("Query Params: " + request.getParameterMap().keySet());
         
-        // Combiner toutes les valeurs disponibles dans l'ordre
-        List<String> allValues = new ArrayList<>();
-        
-        // 1. D'abord les valeurs d'URL
-        allValues.addAll(urlParams.values());
-        
-        // 2. Ensuite les valeurs de requête  
-        Map<String, String[]> queryParams = request.getParameterMap();
-        for (String[] values : queryParams.values()) {
-            if (values != null && values.length > 0) {
-                allValues.add(values[0]);
-            }
-        }
-        
-        System.err.println("Toutes les valeurs (ordre): " + allValues);
+        // Créer une Map combinée avec TOUS les paramètres
+        Map<String, Object> allParamsMap = createAllParamsMap(request, urlParams);
         
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
@@ -43,7 +31,7 @@ public class ParameterResolver {
             
             System.err.println("Paramètre " + i + ": " + paramType.getSimpleName());
             
-            // Types spéciaux
+            // 1. Types spéciaux
             if (paramType == HttpServletRequest.class) {
                 args[i] = request;
                 System.err.println("  → HttpServletRequest");
@@ -54,8 +42,14 @@ public class ParameterResolver {
                 System.err.println("  → HttpServletResponse (réservé)");
                 continue;
             }
+            // 2. Si c'est une Map<String, Object> - injection complète
+            else if (Map.class.isAssignableFrom(paramType)) {
+                args[i] = allParamsMap;
+                System.err.println("  → Map<String, Object> injectée (" + allParamsMap.size() + " éléments)");
+                continue;
+            }
             
-            // Avec @RequestParam - chercher par nom exact
+            // 3. Si le paramètre a l'annotation @RequestParam
             if (requestParam != null) {
                 String paramName = requestParam.value();
                 String paramValue = null;
@@ -78,8 +72,18 @@ public class ParameterResolver {
                 
                 args[i] = convertValue(paramValue, paramType);
             }
-            // Sans annotation - injection par ORDRE
+            // 4. Sans annotation - injection par ORDRE
             else {
+                List<String> allValues = new ArrayList<>();
+                allValues.addAll(urlParams.values());
+                
+                Map<String, String[]> queryParams = request.getParameterMap();
+                for (String[] values : queryParams.values()) {
+                    if (values != null && values.length > 0) {
+                        allValues.add(values[0]);
+                    }
+                }
+                
                 if (i < allValues.size() && allValues.get(i) != null) {
                     args[i] = convertValue(allValues.get(i), paramType);
                     System.err.println("  → Injection par ordre: " + allValues.get(i) + " → " + args[i]);
@@ -92,6 +96,37 @@ public class ParameterResolver {
         
         System.err.println("Paramètres résolus: " + java.util.Arrays.toString(args));
         return args;
+    }
+    
+    private static Map<String, Object> createAllParamsMap(HttpServletRequest request, Map<String, String> urlParams) {
+        Map<String, Object> allParams = new HashMap<>();
+        
+        // 1. Ajouter tous les paramètres d'URL
+        allParams.putAll(urlParams);
+        
+        // 2. Ajouter tous les paramètres de requête
+        Map<String, String[]> requestParams = request.getParameterMap();
+        for (Map.Entry<String, String[]> entry : requestParams.entrySet()) {
+            if (entry.getValue() != null && entry.getValue().length > 0) {
+                // Si un seul paramètre, le stocker comme String
+                if (entry.getValue().length == 1) {
+                    allParams.put(entry.getKey(), entry.getValue()[0]);
+                } else {
+                    // Sinon garder le tableau
+                    allParams.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        
+        // 3. Ajouter tous les attributs de la requête
+        var attributeNames = request.getAttributeNames();
+        while (attributeNames.hasMoreElements()) {
+            String name = attributeNames.nextElement();
+            allParams.put(name, request.getAttribute(name));
+        }
+        
+        System.err.println("Map complète créée: " + allParams.keySet());
+        return allParams;
     }
     
     private static Object convertValue(String value, Class<?> targetType) {

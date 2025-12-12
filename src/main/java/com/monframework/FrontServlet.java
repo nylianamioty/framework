@@ -4,6 +4,7 @@ import com.monframework.mapping.ControllerScanner;
 import com.monframework.mapping.RouteRegistry;
 import com.monframework.mapping.URLRoute;
 import com.monframework.mvc.ModelView;
+import com.monframework.mvc.ModelAndView; // AJOUT
 import com.monframework.mvc.ParameterResolver;
 
 import jakarta.servlet.RequestDispatcher;
@@ -48,6 +49,7 @@ public class FrontServlet extends HttpServlet {
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
         String path = req.getRequestURI().substring(req.getContextPath().length());
+        String httpMethod = req.getMethod().toUpperCase();
         boolean resourceExists = getServletContext().getResource(path) != null;
 
         if (resourceExists) {
@@ -55,10 +57,39 @@ public class FrontServlet extends HttpServlet {
         } else {
             URLRoute route = routeRegistry.findRoute(path);
             if (route != null) {
-                invokeController(route, path, req, res);
+                // Vérifier si la méthode HTTP est autorisée
+                if (isHttpMethodAllowed(route, httpMethod)) {
+                    invokeController(route, path, req, res);
+                } else {
+                    sendMethodNotAllowed(res, httpMethod, route.getHttpMethod());
+                }
             } else {
                 customServe(req, res);
             }
+        }
+    }
+    
+    private boolean isHttpMethodAllowed(URLRoute route, String requestMethod) {
+        String routeMethod = route.getHttpMethod().toUpperCase();
+        
+        if (routeMethod == null || routeMethod.isEmpty() || routeMethod.equals("GET")) {
+            // Accepter GET, POST, etc. pour l'ancien système
+            return true; // Tout est autorisé pour la compatibilité
+        }
+        
+        return routeMethod.equals(requestMethod);
+    }
+    
+    private void sendMethodNotAllowed(HttpServletResponse res, String requestMethod, String allowedMethod) 
+            throws IOException {
+        res.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+        res.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = res.getWriter()) {
+            out.println("<html><head><title>405 - Méthode non autorisée</title></head><body>");
+            out.println("<h1>405 - Méthode non autorisée</h1>");
+            out.println("<p>La méthode HTTP " + requestMethod + " n'est pas autorisée pour cette ressource.</p>");
+            out.println("<p>Méthode autorisée: " + allowedMethod + "</p>");
+            out.println("</body></html>");
         }
     }
 
@@ -66,17 +97,11 @@ public class FrontServlet extends HttpServlet {
 private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
         throws IOException, ServletException {
     try {
-         String requestMethod = req.getMethod().toUpperCase();
-        String routeMethod = route.getHttpMethod().toUpperCase();
-        
-        if (!routeMethod.equals("GET") && !routeMethod.equals(requestMethod)) {
-            res.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED, 
-                         "Méthode " + requestMethod + " non autorisée. Méthode attendue: " + routeMethod);
-            return;
-        }
         System.out.println("=== DEBUG FrontServlet ===");
         System.out.println("URL demandée: " + path);
+        System.out.println("Méthode HTTP: " + req.getMethod());
         System.out.println("Route trouvée: " + route.getUrlPattern());
+        System.out.println("Méthode route: " + route.getHttpMethod());
         System.out.println("Contrôleur: " + route.getController().getClass().getName());
         System.out.println("Méthode: " + route.getMethod().getName());
         
@@ -99,7 +124,6 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
         }
         
         System.out.println("Paramètres résolus: " + java.util.Arrays.toString(args));
-        // === FIN NOUVELLE PARTIE ===
         
         // Appel de la méthode avec les paramètres résolus
         result = method.invoke(controller, args);
@@ -142,7 +166,32 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
             } else {
                 throw new ServletException("JSP non trouvée: " + viewName);
             }
+        } 
+        // AJOUT: Gestion de ModelAndView
+        else if (!methodHandledResponse && result instanceof ModelAndView) {
+            ModelAndView mv = (ModelAndView) result;
+            String viewName = mv.getView();
+            System.out.println("Retour ModelAndView -> JSP: " + viewName);
+            
+            // Transférer le modèle au request
+            Map<String, Object> model = mv.getModel();
+            for (Map.Entry<String, Object> entry : model.entrySet()) {
+                req.setAttribute(entry.getKey(), entry.getValue());
+                System.out.println("Donnée JSP: " + entry.getKey() + " = " + entry.getValue());
+            }
+            
+            urlParams.forEach(req::setAttribute);
+            
+            // Forward vers la JSP
+            RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
+            if (dispatcher != null) {
+                dispatcher.forward(req, res);
+                System.out.println("Forward réussi vers: " + viewName);
+            } else {
+                throw new ServletException("JSP non trouvée: " + viewName);
+            }
         }
+        // Si la méthode a géré la réponse elle-même (avec HttpServletResponse), on ne fait rien
 
     } catch (Exception e) {
         System.err.println("ERREUR lors de l'invocation du contrôleur: " + e.getMessage());
@@ -187,16 +236,6 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
         }
     }
 
-   private boolean isHttpMethodAllowed(URLRoute route, String requestMethod) {
-    String routeMethod = route.getHttpMethod().toUpperCase();
-    
-    if (routeMethod == null || routeMethod.isEmpty() || routeMethod.equals("GET")) {
-        // Accepter GET, POST, etc. pour l'ancien système
-        return true; // Tout est autorisé pour la compatibilité
-    }
-    
-    return routeMethod.equals(requestMethod);
-}
     private void defaultServe(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
         defaultDispatcher.forward(req, res);
     }

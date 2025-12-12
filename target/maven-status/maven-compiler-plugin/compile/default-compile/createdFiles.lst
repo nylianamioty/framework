@@ -1,5 +1,6 @@
 com\monframework\web\annotation\RestController.class
 com\monframework\web\annotation\GetMapping.class
+com\monframework\mvc\ModelAndView.class
 com\monframework\annotation\PutMapping.class
 com\monframework\annotation\GetMapping.class
 com\monframework\annotation\PostMapping.class

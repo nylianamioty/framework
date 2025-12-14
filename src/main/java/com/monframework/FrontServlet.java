@@ -4,6 +4,9 @@ import com.monframework.mapping.ControllerScanner;
 import com.monframework.mapping.RouteRegistry;
 import com.monframework.mapping.URLRoute;
 import com.monframework.mvc.ModelView;
+import com.monframework.annotation.Json;
+import com.monframework.mvc.JsonResponse;
+import com.monframework.mvc.JsonSerializer;
 import com.monframework.mvc.ModelAndView; // AJOUT
 import com.monframework.mvc.ParameterResolver;
 
@@ -16,6 +19,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -93,9 +97,81 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
-   
+private void handleJsonResponse(Object result, HttpServletResponse res) throws IOException {
+    System.out.println("=== HANDLE JSON RESPONSE ===");
+    System.out.println("Type du résultat: " + (result != null ? result.getClass().getName() : "null"));
+    
+    JsonResponse jsonResponse;
+    
+    // Si le résultat est déjà un JsonResponse, l'utiliser directement
+    if (result instanceof JsonResponse) {
+        System.out.println("Résultat est déjà un JsonResponse");
+        jsonResponse = (JsonResponse) result;
+    } 
+    // Sinon créer un JsonResponse standard
+    else {
+        System.out.println("Création d'un JsonResponse standard");
+        jsonResponse = new JsonResponse();
+        jsonResponse.setStatus("success");
+        jsonResponse.setCode(200);
+        jsonResponse.setData(result);
+        
+        // Calculer count si c'est une collection/tableau
+        if (result instanceof java.util.Collection) {
+            jsonResponse.setCount(((java.util.Collection<?>) result).size());
+            System.out.println("C'est une Collection, count: " + jsonResponse.getCount());
+        } else if (result != null && result.getClass().isArray()) {
+            jsonResponse.setCount(java.lang.reflect.Array.getLength(result));
+            System.out.println("C'est un tableau, count: " + jsonResponse.getCount());
+        } else if (result instanceof java.util.Map) {
+            jsonResponse.setCount(((java.util.Map<?, ?>) result).size());
+            System.out.println("C'est une Map, count: " + jsonResponse.getCount());
+        }
+    }
+    
+    // Sérialiser en JSON
+    String json = JsonSerializer.toJson(jsonResponse);
+    
+    System.out.println("JSON généré: " + json);
+    
+    // Écrire la réponse
+    res.setContentType("application/json;charset=UTF-8");
+    try (PrintWriter out = res.getWriter()) {
+        out.print(json);
+        System.out.println("JSON envoyé au client");
+    } catch (IOException e) {
+        System.err.println("Erreur d'écriture JSON: " + e.getMessage());
+        throw e;
+    }
+}
+
+private void handleJsonError(Exception e, HttpServletResponse res) throws IOException {
+    System.err.println("=== HANDLE JSON ERROR ===");
+    
+    JsonResponse jsonResponse = new JsonResponse();
+    jsonResponse.setStatus("error");
+    jsonResponse.setCode(500);
+    
+    java.util.Map<String, String> errorDetails = new java.util.HashMap<>();
+    errorDetails.put("message", e.getMessage());
+    errorDetails.put("type", e.getClass().getName());
+    
+    jsonResponse.setData(errorDetails);
+    
+    String json = JsonSerializer.toJson(jsonResponse);
+    
+    System.err.println("JSON d'erreur: " + json);
+    
+    res.setStatus(500);
+    res.setContentType("application/json;charset=UTF-8");
+    try (PrintWriter out = res.getWriter()) {
+        out.print(json);
+    }
+}
+
 private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
         throws IOException, ServletException {
+    Method method = null;
     try {
         System.out.println("=== DEBUG FrontServlet ===");
         System.out.println("URL demandée: " + path);
@@ -109,7 +185,7 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
         System.out.println("Paramètres URL extraits: " + urlParams);
         System.out.println("Paramètres Query: " + req.getParameterMap());
         
-        Method method = route.getMethod();
+        method = route.getMethod();
         Object controller = route.getController();
         Object result;
 
@@ -127,6 +203,17 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
         
         // Appel de la méthode avec les paramètres résolus
         result = method.invoke(controller, args);
+
+        // DEBUG: Vérifier si la méthode a l'annotation @Json
+        boolean hasJsonAnnotation = method.isAnnotationPresent(Json.class);
+        System.out.println("Méthode a @Json ? " + hasJsonAnnotation);
+        
+        // Si la méthode est annotée @Json, traiter comme réponse JSON
+        if (hasJsonAnnotation) {
+            System.out.println("Traitement comme réponse JSON");
+            handleJsonResponse(result, res);
+            return;
+        }
 
         // Traiter le retour selon le type (SEULEMENT si pas déjà géré dans la méthode)
         boolean methodHandledResponse = false;
@@ -166,9 +253,7 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
             } else {
                 throw new ServletException("JSP non trouvée: " + viewName);
             }
-        } 
-        // AJOUT: Gestion de ModelAndView
-        else if (!methodHandledResponse && result instanceof ModelAndView) {
+        } else if (!methodHandledResponse && result instanceof ModelAndView) {
             ModelAndView mv = (ModelAndView) result;
             String viewName = mv.getView();
             System.out.println("Retour ModelAndView -> JSP: " + viewName);
@@ -197,19 +282,25 @@ private void invokeController(URLRoute route, String path, HttpServletRequest re
         System.err.println("ERREUR lors de l'invocation du contrôleur: " + e.getMessage());
         e.printStackTrace();
 
-        res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-        res.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = res.getWriter()) {
-            out.println("<html><head><title>Erreur Serveur</title></head><body>");
-            out.println("<h1>Erreur 500 - Erreur Interne du Serveur</h1>");
-            out.println("<p>Une erreur s'est produite lors du traitement de la requête.</p>");
-            out.println("<pre>URL: " + path + "</pre>");
-            out.println("<pre>Erreur: " + e.getMessage() + "</pre>");
-            out.println("</body></html>");
+        // Si la méthode avait l'annotation @Json, renvoyer une erreur JSON
+        if (method != null && method.isAnnotationPresent(Json.class)) {
+            handleJsonError(e, res);
+        } else {
+            res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            res.setContentType("text/html;charset=UTF-8");
+            try (PrintWriter out = res.getWriter()) {
+                out.println("<html><head><title>Erreur Serveur</title></head><body>");
+                out.println("<h1>Erreur 500 - Erreur Interne du Serveur</h1>");
+                out.println("<p>Une erreur s'est produite lors du traitement de la requête.</p>");
+                out.println("<pre>URL: " + path + "</pre>");
+                out.println("<pre>Erreur: " + e.getMessage() + "</pre>");
+                out.println("</body></html>");
+            }
         }
     }
 }
-     
+   
+ 
     private void customServe(HttpServletRequest req, HttpServletResponse res) throws IOException {
         String uri = req.getRequestURI();
         String responseBody =

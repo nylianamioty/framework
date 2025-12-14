@@ -48,8 +48,14 @@ public class ParameterResolver {
                 System.err.println("  → Map<String, Object> injectée (" + allParamsMap.size() + " éléments)");
                 continue;
             }
+            // 3. Si c'est un objet complexe (pas un type basique) - faire le binding
+            else if (!isBasicType(paramType)) {
+                args[i] = ObjectBinder.bindObject(paramType, allParamsMap, "");
+                System.err.println("  → Objet " + paramType.getSimpleName() + " bindé: " + args[i]);
+                continue;
+            }
             
-            // 3. Si le paramètre a l'annotation @RequestParam
+            // 4. Si le paramètre a l'annotation @RequestParam
             if (requestParam != null) {
                 String paramName = requestParam.value();
                 String paramValue = null;
@@ -72,7 +78,7 @@ public class ParameterResolver {
                 
                 args[i] = convertValue(paramValue, paramType);
             }
-            // 4. Sans annotation - injection par ORDRE
+            // 5. Sans annotation - injection par ORDRE
             else {
                 List<String> allValues = new ArrayList<>();
                 allValues.addAll(urlParams.values());
@@ -96,6 +102,18 @@ public class ParameterResolver {
         
         System.err.println("Paramètres résolus: " + java.util.Arrays.toString(args));
         return args;
+    }
+    
+    private static boolean isBasicType(Class<?> type) {
+        return type == String.class || 
+               type == int.class || type == Integer.class ||
+               type == long.class || type == Long.class ||
+               type == double.class || type == Double.class ||
+               type == boolean.class || type == Boolean.class ||
+               type == float.class || type == Float.class ||
+               type == byte.class || type == Byte.class ||
+               type == short.class || type == Short.class ||
+               type == char.class || type == Character.class;
     }
     
     private static Map<String, Object> createAllParamsMap(HttpServletRequest request, Map<String, String> urlParams) {
@@ -143,13 +161,15 @@ public class ParameterResolver {
                 return value.isEmpty() ? 0.0 : Double.parseDouble(value);
             } else if (targetType == boolean.class || targetType == Boolean.class) {
                 return Boolean.parseBoolean(value);
+            } else if (targetType == float.class || targetType == Float.class) {
+                return value.isEmpty() ? 0.0f : Float.parseFloat(value);
             }
         } catch (NumberFormatException e) {
             System.err.println("Erreur conversion: " + value + " vers " + targetType);
             return getDefaultValue(targetType);
         }
         
-        return value;
+        return null;
     }
     
     private static Object getDefaultValue(Class<?> type) {
@@ -157,6 +177,7 @@ public class ParameterResolver {
         if (type == long.class) return 0L;
         if (type == double.class) return 0.0;
         if (type == boolean.class) return false;
+        if (type == float.class) return 0.0f;
         return null;
     }
 }

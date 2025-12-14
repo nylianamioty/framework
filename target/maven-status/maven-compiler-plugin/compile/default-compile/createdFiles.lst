@@ -6,11 +6,13 @@ com\monframework\annotation\PostMapping.class
 com\monframework\annotation\DeleteMapping.class
 com\monframework\annotation\RequestMapping.class
 com\monframework\mapping\URLRoute.class
+com\monframework\mvc\JsonResponse.class
 com\monframework\mvc\ParameterResolver.class
 com\monframework\mapping\ControllerScanner.class
 com\monframework\annotation\MyClassAnnotation.class
 com\monframework\scanner\AnnotationScanner.class
 com\monframework\annotation\URLMapping.class
+com\monframework\mvc\JsonSerializer.class
 com\monframework\annotation\Controller.class
 com\monframework\FrontServlet.class
 com\monframework\web\DispatcherServlet.class
@@ -21,5 +23,6 @@ com\monframework\mvc\ModelView.class
 com\monframework\mapping\RouteRegistry.class
 com\monframework\MyClass.class
 com\monframework\annotation\MyAnnotation.class
+com\monframework\annotation\Json.class
 com\monframework\App.class
 com\monframework\controller\Controller.class

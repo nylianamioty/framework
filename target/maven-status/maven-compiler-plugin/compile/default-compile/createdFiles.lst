@@ -1,4 +1,5 @@
 com\monframework\web\annotation\RestController.class
+com\monframework\mvc\MultipartRequestWrapper.class
 com\monframework\mvc\ModelAndView.class
 com\monframework\annotation\PutMapping.class
 com\monframework\annotation\GetMapping.class
@@ -23,6 +24,7 @@ com\monframework\mvc\ModelView.class
 com\monframework\mapping\RouteRegistry.class
 com\monframework\MyClass.class
 com\monframework\annotation\MyAnnotation.class
+com\monframework\mvc\UploadedFile.class
 com\monframework\annotation\Json.class
 com\monframework\App.class
 com\monframework\controller\Controller.class

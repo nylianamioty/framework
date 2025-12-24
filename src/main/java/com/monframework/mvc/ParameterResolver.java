@@ -3,6 +3,10 @@ package com.monframework.mvc;
 import com.monframework.annotation.RequestParam;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
+
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Map;
@@ -42,12 +46,15 @@ public class ParameterResolver {
                 System.err.println("  → HttpServletResponse (réservé)");
                 continue;
             }
+            
             // 2. Si c'est une Map<String, Object> - injection complète
             else if (Map.class.isAssignableFrom(paramType)) {
                 args[i] = allParamsMap;
                 System.err.println("  → Map<String, Object> injectée (" + allParamsMap.size() + " éléments)");
                 continue;
             }
+
+         
             // 3. Si c'est un objet complexe (pas un type basique) - faire le binding
             else if (!isBasicType(paramType)) {
                 args[i] = ObjectBinder.bindObject(paramType, allParamsMap, "");
@@ -78,6 +85,19 @@ public class ParameterResolver {
                 
                 args[i] = convertValue(paramValue, paramType);
             }
+               else if (paramType == UploadedFile.class) {
+                String paramName = getParameterName(param, requestParam);
+                // Récupérer les fichiers uploadés
+                Map<String, UploadedFile> files = (Map<String, UploadedFile>) request.getAttribute("UPLOADED_FILES");
+                if (files != null && files.containsKey(paramName)) {
+                    args[i] = files.get(paramName);
+                    System.err.println("  → Fichier uploadé: " + args[i]);
+                } else {
+                    args[i] = null;
+                    System.err.println("  → Aucun fichier uploadé pour: " + paramName);
+                }
+                continue;
+            }
             // 5. Sans annotation - injection par ORDRE
             else {
                 List<String> allValues = new ArrayList<>();
@@ -104,6 +124,52 @@ public class ParameterResolver {
         return args;
     }
     
+        public static UploadedFile handleFileUpload(Part part) throws IOException {
+        if (part == null || part.getSize() == 0) {
+            return null;
+        }
+        
+        UploadedFile uploadedFile = new UploadedFile();
+        uploadedFile.setName(getFileName(part));
+        uploadedFile.setContentType(part.getContentType());
+        uploadedFile.setSize(part.getSize());
+        
+        // Lire le contenu du fichier
+        byte[] content = new byte[(int) part.getSize()];
+        try (InputStream inputStream = part.getInputStream()) {
+            inputStream.read(content);
+        }
+        uploadedFile.setContent(content);
+        
+        return uploadedFile;
+    }
+
+    private static String getParameterName(Parameter param, RequestParam requestParam) {
+    if (requestParam != null) {
+        return requestParam.value(); // Nom spécifié dans @RequestParam
+    }
+    
+    // Essayer de récupérer le nom réel du paramètre
+    try {
+        if (param.isNamePresent()) {
+            return param.getName();
+        }
+    } catch (Exception e) {
+        // Ignorer si pas disponible
+    }
+    
+    return null;
+}
+    private static String getFileName(Part part) {
+        String contentDisposition = part.getHeader("content-disposition");
+        String[] items = contentDisposition.split(";");
+        for (String item : items) {
+            if (item.trim().startsWith("filename")) {
+                return item.substring(item.indexOf("=") + 2, item.length() - 1);
+            }
+        }
+        return "";
+    }
     private static boolean isBasicType(Class<?> type) {
         return type == String.class || 
                type == int.class || type == Integer.class ||

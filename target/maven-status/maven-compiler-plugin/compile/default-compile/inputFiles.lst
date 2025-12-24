@@ -4,12 +4,14 @@ D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\mvc\ModelView.ja
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\annotation\RequestMapping.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\annotation\MyClassAnnotation.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\annotation\RequestParam.java
+D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\mvc\MultipartRequestWrapper.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\web\DispatcherServlet.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\FrontServlet.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\annotation\MyAnnotation.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\mapping\RouteRegistry.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\mvc\JsonSerializer.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\annotation\DeleteMapping.java
+D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\mvc\UploadedFile.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\annotation\PostMapping.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\scanner\AnnotationScanner.java
 D:\PERS\MIOTY\s5\naina\framework\src\main\java\com\monframework\mvc\JsonResponse.java

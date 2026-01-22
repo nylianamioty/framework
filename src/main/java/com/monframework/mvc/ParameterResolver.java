@@ -1,8 +1,11 @@
 package com.monframework.mvc;
 
 import com.monframework.annotation.RequestParam;
+import com.monframework.annotation.SessionAttribute;
+import com.monframework.annotation.RemoveSessionAttribute;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.servlet.http.Part;
 
 import java.io.IOException;
@@ -16,24 +19,29 @@ import java.util.List;
 
 public class ParameterResolver {
     
-    public static Object[] resolveParameters(Method method, HttpServletRequest request, Map<String, String> urlParams) {
+    public static Object[] resolveParameters(Method method, HttpServletRequest request, 
+                                           HttpServletResponse response, Map<String, String> urlParams) {
         Parameter[] parameters = method.getParameters();
         Object[] args = new Object[parameters.length];
         
         System.err.println("=== DEBUG ParameterResolver ===");
         System.err.println("Méthode: " + method.getName());
-        System.err.println("URL Params: " + urlParams);
-        System.err.println("Query Params: " + request.getParameterMap().keySet());
         
         // Créer une Map combinée avec TOUS les paramètres
         Map<String, Object> allParamsMap = createAllParamsMap(request, urlParams);
+        
+        // Stocker la session pour utilisation ultérieure
+        HttpSession session = request.getSession(false);
         
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
             Class<?> paramType = param.getType();
             RequestParam requestParam = param.getAnnotation(RequestParam.class);
+            SessionAttribute sessionAttr = param.getAnnotation(SessionAttribute.class);
             
-            System.err.println("Paramètre " + i + ": " + paramType.getSimpleName());
+            System.err.println("Paramètre " + i + ": " + paramType.getSimpleName() + 
+                             (requestParam != null ? " @RequestParam(\"" + requestParam.value() + "\")" : "") +
+                             (sessionAttr != null ? " @SessionAttribute(\"" + sessionAttr.value() + "\")" : ""));
             
             // 1. Types spéciaux
             if (paramType == HttpServletRequest.class) {
@@ -42,27 +50,78 @@ public class ParameterResolver {
                 continue;
             }
             else if (paramType == HttpServletResponse.class) {
-                args[i] = null;
-                System.err.println("  → HttpServletResponse (réservé)");
+                args[i] = response;
+                System.err.println("  → HttpServletResponse");
                 continue;
             }
-            
+            else if (paramType == HttpSession.class) {
+                // Toujours retourner une session (créer si nécessaire)
+                args[i] = request.getSession(true);
+                System.err.println("  → HttpSession");
+                continue;
+            }
             // 2. Si c'est une Map<String, Object> - injection complète
             else if (Map.class.isAssignableFrom(paramType)) {
                 args[i] = allParamsMap;
                 System.err.println("  → Map<String, Object> injectée (" + allParamsMap.size() + " éléments)");
                 continue;
             }
-
-         
-            // 3. Si c'est un objet complexe (pas un type basique) - faire le binding
+            // 3. Si le paramètre a l'annotation @SessionAttribute
+            else if (sessionAttr != null) {
+                String attrName = sessionAttr.value();
+                
+                // IMPORTANT: Stratégie pour déterminer si on doit LIRE ou ÉCRIRE
+                // 1. Vérifier si ce paramètre existe dans les paramètres de la requête
+                //    (cela signifie qu'on veut ÉCRIRE dans la session)
+                // 2. Sinon, LIRE depuis la session
+                
+                boolean hasValueInRequest = allParamsMap.containsKey(attrName);
+                
+                if (hasValueInRequest) {
+                    // ÉCRITURE: On a une valeur dans la requête, on l'écrit dans la session
+                    Object value = allParamsMap.get(attrName);
+                    Object convertedValue = convertValueBasedOnType(value, paramType);
+                    
+                    // Créer la session si nécessaire
+                    if (session == null) {
+                        session = request.getSession(true);
+                    }
+                    
+                    session.setAttribute(attrName, convertedValue);
+                    args[i] = convertedValue;
+                    System.err.println("  → ÉCRITURE session '" + attrName + "': " + args[i]);
+                } else {
+                    // LECTURE: On veut lire depuis la session
+                    if (session == null && sessionAttr.required()) {
+                        throw new RuntimeException("Attribut de session requis manquant: " + attrName);
+                    }
+                    
+                    if (session != null) {
+                        Object attrValue = session.getAttribute(attrName);
+                        if (attrValue != null) {
+                            args[i] = convertSessionValue(attrValue, paramType);
+                            System.err.println("  → LECTURE session '" + attrName + "': " + args[i]);
+                        } else if (sessionAttr.required()) {
+                            throw new RuntimeException("Attribut de session requis manquant: " + attrName);
+                        } else {
+                            args[i] = null;
+                            System.err.println("  → Attribut de session '" + attrName + "' non trouvé (non requis)");
+                        }
+                    } else {
+                        args[i] = null;
+                        System.err.println("  → Aucune session pour lire '" + attrName + "'");
+                    }
+                }
+                continue;
+            }
+            // 4. Si c'est un objet complexe (pas un type basique) - faire le binding
             else if (!isBasicType(paramType)) {
                 args[i] = ObjectBinder.bindObject(paramType, allParamsMap, "");
                 System.err.println("  → Objet " + paramType.getSimpleName() + " bindé: " + args[i]);
                 continue;
             }
             
-            // 4. Si le paramètre a l'annotation @RequestParam
+            // 5. Si le paramètre a l'annotation @RequestParam
             if (requestParam != null) {
                 String paramName = requestParam.value();
                 String paramValue = null;
@@ -85,20 +144,7 @@ public class ParameterResolver {
                 
                 args[i] = convertValue(paramValue, paramType);
             }
-               else if (paramType == UploadedFile.class) {
-                String paramName = getParameterName(param, requestParam);
-                // Récupérer les fichiers uploadés
-                Map<String, UploadedFile> files = (Map<String, UploadedFile>) request.getAttribute("UPLOADED_FILES");
-                if (files != null && files.containsKey(paramName)) {
-                    args[i] = files.get(paramName);
-                    System.err.println("  → Fichier uploadé: " + args[i]);
-                } else {
-                    args[i] = null;
-                    System.err.println("  → Aucun fichier uploadé pour: " + paramName);
-                }
-                continue;
-            }
-            // 5. Sans annotation - injection par ORDRE
+            // 6. Sans annotation - injection par ORDRE
             else {
                 List<String> allValues = new ArrayList<>();
                 allValues.addAll(urlParams.values());
@@ -122,6 +168,40 @@ public class ParameterResolver {
         
         System.err.println("Paramètres résolus: " + java.util.Arrays.toString(args));
         return args;
+    }
+    
+    // Nouvelle méthode pour convertir les valeurs des paramètres selon le type
+    private static Object convertValueBasedOnType(Object value, Class<?> targetType) {
+        if (value == null) return null;
+        
+        if (targetType == String.class) {
+            return value.toString();
+        } else if (targetType == int.class || targetType == Integer.class) {
+            return Integer.parseInt(value.toString());
+        } else if (targetType == long.class || targetType == Long.class) {
+            return Long.parseLong(value.toString());
+        } else if (targetType == double.class || targetType == Double.class) {
+            return Double.parseDouble(value.toString());
+        } else if (targetType == boolean.class || targetType == Boolean.class) {
+            return Boolean.parseBoolean(value.toString());
+        } else if (targetType == float.class || targetType == Float.class) {
+            return Float.parseFloat(value.toString());
+        }
+        
+        return value;
+    }
+    
+    // Convertir une valeur de session au type attendu
+    private static Object convertSessionValue(Object sessionValue, Class<?> targetType) {
+        if (sessionValue == null) return null;
+        
+        // Si les types correspondent directement
+        if (targetType.isInstance(sessionValue)) {
+            return sessionValue;
+        }
+        
+        // Sinon, essayer une conversion
+        return convertValueBasedOnType(sessionValue, targetType);
     }
     
         public static UploadedFile handleFileUpload(Part part) throws IOException {

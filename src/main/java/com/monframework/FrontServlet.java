@@ -7,6 +7,7 @@ import com.monframework.mvc.ModelView;
 import com.monframework.mvc.ModelAndView;
 import com.monframework.mvc.ParameterResolver;
 import com.monframework.mvc.UploadedFile;
+import com.monframework.annotation.RemoveSessionAttribute;
 
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletConfig;
@@ -14,6 +15,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.servlet.annotation.MultipartConfig;
 import jakarta.servlet.http.Part;
 
@@ -187,121 +189,132 @@ public class FrontServlet extends HttpServlet {
     }
 
     private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
-            throws IOException, ServletException {
-        try {
-            System.out.println("=== DEBUG FrontServlet ===");
-            System.out.println("URL demandée: " + path);
-            System.out.println("Méthode HTTP: " + req.getMethod());
-            System.out.println("Route trouvée: " + route.getUrlPattern());
-            System.out.println("Méthode route: " + route.getHttpMethod());
-            System.out.println("Contrôleur: " + route.getController().getClass().getName());
-            System.out.println("Méthode: " + route.getMethod().getName());
-            
-            Map<String, String> urlParams = route.extractParams(path);
-            System.out.println("Paramètres URL extraits: " + urlParams);
-            System.out.println("Paramètres Query: " + req.getParameterMap());
-            
-            Method method = route.getMethod();
-            Object controller = route.getController();
-            Object result;
+        throws IOException, ServletException {
+    try {
+        System.out.println("=== DEBUG FrontServlet ===");
+        System.out.println("URL demandée: " + path);
+        System.out.println("Méthode HTTP: " + req.getMethod());
+        System.out.println("Route trouvée: " + route.getUrlPattern());
+        System.out.println("Méthode route: " + route.getHttpMethod());
+        System.out.println("Contrôleur: " + route.getController().getClass().getName());
+        System.out.println("Méthode: " + route.getMethod().getName());
+        
+        Map<String, String> urlParams = route.extractParams(path);
+        System.out.println("Paramètres URL extraits: " + urlParams);
+        System.out.println("Paramètres Query: " + req.getParameterMap());
+        
+        Method method = route.getMethod();
+        Object controller = route.getController();
+        Object result;
 
-            Object[] args = ParameterResolver.resolveParameters(method, req, urlParams);
-            
-            // Injecter HttpServletResponse si nécessaire
-            Class<?>[] paramTypes = method.getParameterTypes();
-            for (int i = 0; i < paramTypes.length; i++) {
-                if (paramTypes[i] == HttpServletResponse.class && args[i] == null) {
-                    args[i] = res;
-                }
-            }
-            
-            System.out.println("Paramètres résolus: " + java.util.Arrays.toString(args));
-            
-            // Appel de la méthode avec les paramètres résolus
-            result = method.invoke(controller, args);
+        // CHANGEMENT ICI : On passe aussi la response à ParameterResolver
+        Object[] args = ParameterResolver.resolveParameters(method, req, res, urlParams);
+        
+        System.out.println("Paramètres résolus: " + java.util.Arrays.toString(args));
+        
+        // Appel de la méthode avec les paramètres résolus
+        result = method.invoke(controller, args);
 
-            // Traiter le retour selon le type (SEULEMENT si pas déjà géré dans la méthode)
-            boolean methodHandledResponse = false;
-            for (Object arg : args) {
-                if (arg == res) {
-                    methodHandledResponse = true;
-                    break;
+        // Gérer @RemoveSessionAttribute après l'exécution
+        RemoveSessionAttribute removeSessionAttr = method.getAnnotation(RemoveSessionAttribute.class);
+        if (removeSessionAttr != null) {
+            HttpSession session = req.getSession(false);
+            if (session != null) {
+                for (String attrName : removeSessionAttr.value()) {
+                    session.removeAttribute(attrName);
+                    System.err.println("Attribut de session supprimé: " + attrName);
                 }
-            }
-            
-            if (!methodHandledResponse && result instanceof String) {
-                // Retour String -> PrintWriter direct
-                String responseString = (String) result;
-                System.out.println("Retour String: " + responseString);
-                res.setContentType("text/html;charset=UTF-8");
-                try (PrintWriter out = res.getWriter()) {
-                    out.print(responseString);
-                }
-                
-            } else if (!methodHandledResponse && result instanceof ModelView) {
-                ModelView mv = (ModelView) result;
-                String viewName = mv.getView();
-                System.out.println("Retour ModelView -> JSP: " + viewName);
-                
-                Map<String, Object> data = mv.getData();
-                for (Map.Entry<String, Object> entry : data.entrySet()) {
-                    req.setAttribute(entry.getKey(), entry.getValue());
-                    System.out.println("Donnée JSP: " + entry.getKey() + " = " + entry.getValue());
-                }
-                
-                urlParams.forEach(req::setAttribute);
-                
-                RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
-                if (dispatcher != null) {
-                    dispatcher.forward(req, res);
-                    System.out.println("Forward réussi vers: " + viewName);
-                } else {
-                    throw new ServletException("JSP non trouvée: " + viewName);
-                }
-            } 
-            // Gestion de ModelAndView
-            else if (!methodHandledResponse && result instanceof ModelAndView) {
-                ModelAndView mv = (ModelAndView) result;
-                String viewName = mv.getView();
-                System.out.println("Retour ModelAndView -> JSP: " + viewName);
-                
-                // Transférer le modèle au request
-                Map<String, Object> model = mv.getModel();
-                for (Map.Entry<String, Object> entry : model.entrySet()) {
-                    req.setAttribute(entry.getKey(), entry.getValue());
-                    System.out.println("Donnée JSP: " + entry.getKey() + " = " + entry.getValue());
-                }
-                
-                urlParams.forEach(req::setAttribute);
-                
-                // Forward vers la JSP
-                RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
-                if (dispatcher != null) {
-                    dispatcher.forward(req, res);
-                    System.out.println("Forward réussi vers: " + viewName);
-                } else {
-                    throw new ServletException("JSP non trouvée: " + viewName);
-                }
-            }
-            // Si la méthode a géré la réponse elle-même (avec HttpServletResponse), on ne fait rien
-
-        } catch (Exception e) {
-            System.err.println("ERREUR lors de l'invocation du contrôleur: " + e.getMessage());
-            e.printStackTrace();
-
-            res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            res.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = res.getWriter()) {
-                out.println("<html><head><title>Erreur Serveur</title></head><body>");
-                out.println("<h1>Erreur 500 - Erreur Interne du Serveur</h1>");
-                out.println("<p>Une erreur s'est produite lors du traitement de la requête.</p>");
-                out.println("<pre>URL: " + path + "</pre>");
-                out.println("<pre>Erreur: " + e.getMessage() + "</pre>");
-                out.println("</body></html>");
             }
         }
+
+        // Traiter le retour selon le type (SEULEMENT si la méthode n'a pas déjà écrit la réponse)
+        boolean methodHandledResponse = false;
+        for (Object arg : args) {
+            if (arg == res) {
+                methodHandledResponse = true;
+                break;
+            }
+        }
+        
+        if (!methodHandledResponse) {
+            handleMethodResult(result, req, res, urlParams);
+        }
+
+    } catch (Exception e) {
+        System.err.println("ERREUR lors de l'invocation du contrôleur: " + e.getMessage());
+        e.printStackTrace();
+
+        res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        res.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = res.getWriter()) {
+            out.println("<html><head><title>Erreur Serveur</title></head><body>");
+            out.println("<h1>Erreur 500 - Erreur Interne du Serveur</h1>");
+            out.println("<p>Une erreur s'est produite lors du traitement de la requête.</p>");
+            out.println("<pre>URL: " + path + "</pre>");
+            out.println("<pre>Erreur: " + e.getMessage() + "</pre>");
+            out.println("</body></html>");
+        }
     }
-     
+}
+
+// Nouvelle méthode pour gérer le résultat de la méthode
+private void handleMethodResult(Object result, HttpServletRequest req, 
+                               HttpServletResponse res, Map<String, String> urlParams) 
+        throws IOException, ServletException {
+    
+    if (result instanceof String) {
+        // Retour String -> PrintWriter direct
+        String responseString = (String) result;
+        System.out.println("Retour String: " + responseString);
+        res.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = res.getWriter()) {
+            out.print(responseString);
+        }
+        
+    } else if (result instanceof ModelView) {
+        ModelView mv = (ModelView) result;
+        String viewName = mv.getView();
+        System.out.println("Retour ModelView -> JSP: " + viewName);
+        
+        Map<String, Object> data = mv.getData();
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            req.setAttribute(entry.getKey(), entry.getValue());
+            System.out.println("Donnée JSP: " + entry.getKey() + " = " + entry.getValue());
+        }
+        
+        urlParams.forEach(req::setAttribute);
+        
+        RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
+        if (dispatcher != null) {
+            dispatcher.forward(req, res);
+            System.out.println("Forward réussi vers: " + viewName);
+        } else {
+            throw new ServletException("JSP non trouvée: " + viewName);
+        }
+    } 
+    else if (result instanceof ModelAndView) {
+        ModelAndView mv = (ModelAndView) result;
+        String viewName = mv.getView();
+        System.out.println("Retour ModelAndView -> JSP: " + viewName);
+        
+        Map<String, Object> model = mv.getModel();
+        for (Map.Entry<String, Object> entry : model.entrySet()) {
+            req.setAttribute(entry.getKey(), entry.getValue());
+            System.out.println("Donnée JSP: " + entry.getKey() + " = " + entry.getValue());
+        }
+        
+        urlParams.forEach(req::setAttribute);
+        
+        RequestDispatcher dispatcher = req.getRequestDispatcher("/" + viewName);
+        if (dispatcher != null) {
+            dispatcher.forward(req, res);
+            System.out.println("Forward réussi vers: " + viewName);
+        } else {
+            throw new ServletException("JSP non trouvée: " + viewName);
+        }
+    }
+    // Si result est null, ne rien faire
+} 
     private void customServe(HttpServletRequest req, HttpServletResponse res) throws IOException {
         String uri = req.getRequestURI();
         String responseBody =

@@ -22,7 +22,9 @@ com\monframework\mvc\ObjectBinder.class
 com\monframework\annotation\RequestParam.class
 com\monframework\mvc\ModelView.class
 com\monframework\mapping\RouteRegistry.class
+com\monframework\annotation\RemoveSessionAttribute.class
 com\monframework\MyClass.class
+com\monframework\annotation\SessionAttribute.class
 com\monframework\annotation\MyAnnotation.class
 com\monframework\mvc\UploadedFile.class
 com\monframework\annotation\Json.class

@@ -4,6 +4,7 @@ com\monframework\mvc\ModelAndView.class
 com\monframework\annotation\PutMapping.class
 com\monframework\annotation\GetMapping.class
 com\monframework\annotation\PostMapping.class
+com\monframework\security\SecurityManager.class
 com\monframework\annotation\DeleteMapping.class
 com\monframework\annotation\RequestMapping.class
 com\monframework\mapping\URLRoute.class
@@ -15,6 +16,7 @@ com\monframework\scanner\AnnotationScanner.class
 com\monframework\annotation\URLMapping.class
 com\monframework\mvc\JsonSerializer.class
 com\monframework\annotation\Controller.class
+com\monframework\annotation\Authenticated.class
 com\monframework\FrontServlet.class
 com\monframework\web\DispatcherServlet.class
 com\monframework\web\annotation\GetMapping.class
@@ -27,6 +29,8 @@ com\monframework\MyClass.class
 com\monframework\annotation\SessionAttribute.class
 com\monframework\annotation\MyAnnotation.class
 com\monframework\mvc\UploadedFile.class
+com\monframework\annotation\RoleAllowed.class
 com\monframework\annotation\Json.class
 com\monframework\App.class
 com\monframework\controller\Controller.class
+com\monframework\annotation\SecurityConfig.class

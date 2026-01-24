@@ -8,6 +8,7 @@ import com.monframework.mvc.ModelAndView;
 import com.monframework.mvc.ParameterResolver;
 import com.monframework.mvc.UploadedFile;
 import com.monframework.annotation.RemoveSessionAttribute;
+import com.monframework.security.SecurityManager;
 
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletConfig;
@@ -81,18 +82,20 @@ public class FrontServlet extends HttpServlet {
         if (resourceExists) {
             defaultServe(req, res);
         } else {
-            URLRoute route = routeRegistry.findRoute(path);
+            URLRoute route = routeRegistry.findRoute(path, httpMethod);
+            
             if (route != null) {
-                System.err.println("Route found: " + route.getUrlPattern() + " [" + route.getHttpMethod() + "]");
-                if (isHttpMethodAllowed(route, httpMethod)) {
-                    invokeController(route, path, req, res);
-                } else {
-                    System.err.println("Method not allowed!");
-                    sendMethodNotAllowed(res, httpMethod, route.getHttpMethod());
-                }
+                System.err.println("Route trouvée: " + route.getUrlPattern() + " [" + route.getHttpMethod() + "]");
+                invokeController(route, path, req, res);
             } else {
-                System.err.println("No route found for: " + path);
-                customServe(req, res);
+                URLRoute anyMethodRoute = routeRegistry.findRoute(path);
+                if (anyMethodRoute != null) {
+                    System.err.println("Méthode non autorisée! Route: " + anyMethodRoute.getHttpMethod() + ", Requête: " + httpMethod);
+                    sendMethodNotAllowed(res, httpMethod, anyMethodRoute.getHttpMethod());
+                } else {
+                    System.err.println("Aucune route trouvée pour: " + path);
+                    customServe(req, res);
+                }
             }
         }
     }
@@ -163,7 +166,7 @@ public class FrontServlet extends HttpServlet {
         System.err.println("Route method: " + routeMethod);
         System.err.println("Request method: " + requestMethod);
         
-        // Si la route n'a pas de méthode spécifiée (ancien système) ou est GET, accepter toutes
+        // raha tsisy méthode spécifiée (ancien système) na GET, accepter toutes
         if (routeMethod == null || routeMethod.isEmpty() || routeMethod.equals("GET")) {
             System.err.println("  → Ancien système ou GET, autorisé");
             return true;
@@ -188,9 +191,10 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
-    private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
+  private void invokeController(URLRoute route, String path, HttpServletRequest req, HttpServletResponse res)
         throws IOException, ServletException {
     try {
+       
         System.out.println("=== DEBUG FrontServlet ===");
         System.out.println("URL demandée: " + path);
         System.out.println("Méthode HTTP: " + req.getMethod());
@@ -207,12 +211,16 @@ public class FrontServlet extends HttpServlet {
         Object controller = route.getController();
         Object result;
 
-        // CHANGEMENT ICI : On passe aussi la response à ParameterResolver
+       
+        if (!SecurityManager.checkAccess(method, controller.getClass(), req, res)) {
+            System.out.println("Accès refusé par SecurityManager");
+            return; 
+        }
+        
         Object[] args = ParameterResolver.resolveParameters(method, req, res, urlParams);
         
         System.out.println("Paramètres résolus: " + java.util.Arrays.toString(args));
         
-        // Appel de la méthode avec les paramètres résolus
         result = method.invoke(controller, args);
 
         // Gérer @RemoveSessionAttribute après l'exécution
@@ -256,9 +264,7 @@ public class FrontServlet extends HttpServlet {
         }
     }
 }
-
-// Nouvelle méthode pour gérer le résultat de la méthode
-private void handleMethodResult(Object result, HttpServletRequest req, 
+    private void handleMethodResult(Object result, HttpServletRequest req, 
                                HttpServletResponse res, Map<String, String> urlParams) 
         throws IOException, ServletException {
     
